@@ -1943,22 +1943,20 @@
   var downloadsCap = null;
 
   // ---------- native plugin access (Capacitor Filesystem, MailComposer) ----------
-  // This app is a single plain HTML file with no JS bundler, so the plugins'
-  // own npm JS wrappers (which normally call registerPlugin() when imported)
-  // never actually run here. We call Capacitor's core registerPlugin()
-  // ourselves to get a working proxy straight to the native implementation,
-  // which IS already compiled into the app via `cap sync`.
-  var NativeFilesystem = null;
-  var NativeMailComposer = null;
-  if (window.Capacitor && typeof window.Capacitor.registerPlugin === 'function'){
-    try { NativeFilesystem = window.Capacitor.registerPlugin('Filesystem'); } catch(e){ console.error('registerPlugin Filesystem failed', e); }
-    try { NativeMailComposer = window.Capacitor.registerPlugin('MailComposer'); } catch(e){ console.error('registerPlugin MailComposer failed', e); }
+  // Confirmed via on-device diagnostic: window.Capacitor.Plugins already
+  // contains working proxies for every natively-registered plugin
+  // (MailComposer, Filesystem, Camera, ...) without needing anything else.
+  function getNativeFilesystem(){
+    return (window.Capacitor && window.Capacitor.Plugins) ? window.Capacitor.Plugins.Filesystem : null;
+  }
+  function getNativeMailComposer(){
+    return (window.Capacitor && window.Capacitor.Plugins) ? window.Capacitor.Plugins.MailComposer : null;
   }
   function isCapacitorNative(){
-    return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && NativeFilesystem);
+    return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && getNativeFilesystem());
   }
   function hasMailComposer(){
-    return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && NativeMailComposer);
+    return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && getNativeMailComposer());
   }
 
   function showDiagnostic(){
@@ -1974,8 +1972,8 @@
       }
     }
     lines.push('');
-    lines.push('NativeFilesystem cree : ' + !!NativeFilesystem);
-    lines.push('NativeMailComposer cree : ' + !!NativeMailComposer);
+    lines.push('hasMailComposer() : ' + hasMailComposer());
+    lines.push('isCapacitorNative() : ' + isCapacitorNative());
     lines.push('');
     lines.push('navigator.share existe : ' + !!navigator.share);
     lines.push('navigator.canShare existe : ' + !!navigator.canShare);
@@ -1984,7 +1982,7 @@
       lines.push('');
       lines.push('Test canComposeMail en cours...');
       window.alert(lines.join('\n'));
-      NativeMailComposer.canComposeMail()
+      getNativeMailComposer().canComposeMail()
         .then(function(res){
           window.alert('Resultat canComposeMail : ' + JSON.stringify(res));
         })
@@ -2026,7 +2024,7 @@
   // device's Documents storage, using Capacitor's native Filesystem plugin.
   // Only works once @capacitor/filesystem is added to the native project.
   function saveMissionFilesNative(m, pdfBlob, pdfFilename){
-    var Filesystem = NativeFilesystem;
+    var Filesystem = getNativeFilesystem();
     var folder = 'fiche_vehicule/' + todayISODate();
     var baseName = pdfFilename.replace(/\.pdf$/i, '');
 
@@ -2182,7 +2180,7 @@
     // ---- Best path: native mail composer (real recipient/subject/body/attachments) ----
     if (hasMailComposer()){
       var text = buildEmailBodyText(m);
-      var MailComposer = NativeMailComposer;
+      var MailComposer = getNativeMailComposer();
       var attachments = [];
       var prep = Promise.resolve();
 
