@@ -33,6 +33,17 @@ jobs:
       - name: Installer les dependances npm
         run: npm install
 
+      - name: DEBUG - verifier le contenu de package.json et node_modules
+        run: |
+          echo "--- package.json tel que vu par le job ---"
+          cat package.json
+          echo ""
+          echo "--- contenu de node_modules/@capawesome (si present) ---"
+          ls -la node_modules/@capawesome/ 2>&1 || echo "DOSSIER @capawesome INTROUVABLE"
+          echo ""
+          echo "--- package.json du plugin mail-composer (si present) ---"
+          cat node_modules/@capawesome/capacitor-mail-composer/package.json 2>&1 || echo "PACKAGE.JSON DU PLUGIN INTROUVABLE"
+
       - name: Ajouter la plateforme Android
         run: npx cap add android
 
