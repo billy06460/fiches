@@ -66,3 +66,4 @@ jobs:
           name: carnet-de-bord-debug-apk
           path: android/app/build/outputs/apk/debug/app-debug.apk
           if-no-files-found: error
+
