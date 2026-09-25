@@ -1355,6 +1355,7 @@
       '<div class="save-bar" id="saveBar">' +
         '<span class="hint" id="saveHint" style="align-self:center;margin-right:auto;">Faites défiler jusqu\'en bas de la fiche pour valider.</span>' +
         '<div class="save-bar-actions" id="saveBarActions">' +
+          '<button class="btn" id="btnDiag" title="Diagnostic">🔧</button>' +
           '<button class="btn" id="btnPdf">📄 PDF</button>' +
           '<button class="btn" id="btnDraft">Sauvegarde temporaire</button>' +
           '<button class="btn btn-primary" id="btnSave">Valider et envoyer</button>' +
@@ -1490,6 +1491,7 @@
     document.getElementById('btnSave').addEventListener('click', function(){ validateAndSend(m); });
     document.getElementById('btnDraft').addEventListener('click', function(){ saveDraft(m); });
     document.getElementById('btnPdf').addEventListener('click', function(){ exportMissionPdf(m); });
+    document.getElementById('btnDiag').addEventListener('click', showDiagnostic);
   }
 
   function wirePhotoRemoval(m){
@@ -1957,6 +1959,41 @@
   }
   function hasMailComposer(){
     return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && NativeMailComposer);
+  }
+
+  function showDiagnostic(){
+    var lines = [];
+    lines.push('window.Capacitor existe : ' + !!window.Capacitor);
+    if (window.Capacitor){
+      lines.push('isNativePlatform() : ' + (window.Capacitor.isNativePlatform ? window.Capacitor.isNativePlatform() : 'fonction absente'));
+      lines.push('getPlatform() : ' + (window.Capacitor.getPlatform ? window.Capacitor.getPlatform() : 'fonction absente'));
+      lines.push('typeof registerPlugin : ' + typeof window.Capacitor.registerPlugin);
+      lines.push('Capacitor.Plugins present : ' + !!window.Capacitor.Plugins);
+      if (window.Capacitor.Plugins){
+        lines.push('Plugins listes : ' + Object.keys(window.Capacitor.Plugins).join(', '));
+      }
+    }
+    lines.push('');
+    lines.push('NativeFilesystem cree : ' + !!NativeFilesystem);
+    lines.push('NativeMailComposer cree : ' + !!NativeMailComposer);
+    lines.push('');
+    lines.push('navigator.share existe : ' + !!navigator.share);
+    lines.push('navigator.canShare existe : ' + !!navigator.canShare);
+
+    if (hasMailComposer()){
+      lines.push('');
+      lines.push('Test canComposeMail en cours...');
+      window.alert(lines.join('\n'));
+      NativeMailComposer.canComposeMail()
+        .then(function(res){
+          window.alert('Resultat canComposeMail : ' + JSON.stringify(res));
+        })
+        .catch(function(err){
+          window.alert('Erreur canComposeMail : ' + (err && (err.message || JSON.stringify(err))));
+        });
+    } else {
+      window.alert(lines.join('\n'));
+    }
   }
   function blobToBase64(blob){
     return new Promise(function(resolve, reject){
