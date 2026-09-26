@@ -950,22 +950,56 @@
     return this;
   };
 
-  MiniPDF.prototype.addImage = function (dataUrl, format, x, y, w, h) {
-    var cached = this._images[dataUrl];
+  function detectImageFormat(bytes){
+    if (bytes.length >= 2 && bytes[0] === 0xFF && bytes[1] === 0xD8) return 'jpeg';
+    if (bytes.length >= 4 && bytes[0] === 0x89 && bytes[1] === 0x50 && bytes[2] === 0x4E && bytes[3] === 0x47) return 'png';
+    return 'unknown';
+  }
+
+  // imgData is either:
+  //  - a data URL string (embedded as JPEG via DCTDecode; format is verified via
+  //    magic bytes first, since some WebViews silently return PNG bytes even when
+  //    canvas.toDataURL('image/jpeg') was requested)
+  //  - a pre-decoded raw-pixel object { rgbFlate: Uint8Array, width, height } or
+  //    { rgbRaw: Uint8Array, width, height }, used as a fallback for any image
+  //    that isn't actually JPEG (see preparePhotoForPdf in the app code)
+  MiniPDF.prototype.addImage = function (imgData, format, x, y, w, h) {
     var imgId;
+    var isString = typeof imgData === 'string';
+    var cached = isString ? this._images[imgData] : null;
     if (cached){
       imgId = cached.id;
-    } else {
-      var comma = dataUrl.indexOf(',');
-      var b64 = comma !== -1 ? dataUrl.slice(comma + 1) : dataUrl;
+    } else if (isString){
+      var comma = imgData.indexOf(',');
+      var b64 = comma !== -1 ? imgData.slice(comma + 1) : imgData;
       var bytes = base64ToBytes(b64);
+      var realFormat = detectImageFormat(bytes);
+      if (realFormat !== 'jpeg'){
+        // Not actually a JPEG despite being passed as one: skip rather than
+        // emit a PDF with a mismatched filter (which some strict readers reject).
+        return this;
+      }
       var dims = getJpegDimensions(bytes);
       var dict = '<< /Type /XObject /Subtype /Image /Width ' + dims.width +
         ' /Height ' + dims.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8' +
         ' /Filter /DCTDecode /Length ' + bytes.length + ' >>\nstream\n';
       var body = concatBytes([strToBytes(dict), bytes, strToBytes('\nendstream')]);
       imgId = this._addObject(body);
-      this._images[dataUrl] = { id: imgId, w: dims.width, h: dims.height };
+      this._images[imgData] = { id: imgId };
+    } else if (imgData && imgData.rgbFlate){
+      var dict2 = '<< /Type /XObject /Subtype /Image /Width ' + imgData.width +
+        ' /Height ' + imgData.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8' +
+        ' /Filter /FlateDecode /Length ' + imgData.rgbFlate.length + ' >>\nstream\n';
+      var body2 = concatBytes([strToBytes(dict2), imgData.rgbFlate, strToBytes('\nendstream')]);
+      imgId = this._addObject(body2);
+    } else if (imgData && imgData.rgbRaw){
+      var dict3 = '<< /Type /XObject /Subtype /Image /Width ' + imgData.width +
+        ' /Height ' + imgData.height + ' /ColorSpace /DeviceRGB /BitsPerComponent 8' +
+        ' /Length ' + imgData.rgbRaw.length + ' >>\nstream\n';
+      var body3 = concatBytes([strToBytes(dict3), imgData.rgbRaw, strToBytes('\nendstream')]);
+      imgId = this._addObject(body3);
+    } else {
+      return this;
     }
     this._page.imageIds['Im' + imgId] = imgId;
     var xPt = toPt(x), wPt = toPt(w), hPt = toPt(h);
@@ -1147,7 +1181,11 @@
   }
   function fmtKm(v){
     if (v === "" || v === null || v === undefined || isNaN(v)) return "—";
-    return Number(v).toLocaleString('fr-FR') + " km";
+    return Math.round(Number(v)) + " km";
+  }
+  function fmtKmNumber(v){
+    if (v === "" || v === null || v === undefined || isNaN(v)) return "—";
+    return String(Math.round(Number(v)));
   }
   function fuelSummary(m){
     if (!m.fuelDone) return 'Non';
@@ -1254,7 +1292,7 @@
     var delta = "";
     if (m.kmStart !== "" && m.kmEnd !== "" && !isNaN(m.kmStart) && !isNaN(m.kmEnd)){
       var d = Number(m.kmEnd) - Number(m.kmStart);
-      delta = '<div class="km-delta">Distance parcourue : <strong>' + (isNaN(d) ? "—" : d.toLocaleString('fr-FR') + " km") + '</strong></div>';
+      delta = '<div class="km-delta">Distance parcourue : <strong>' + (isNaN(d) ? "—" : fmtKmNumber(d) + " km") + '</strong></div>';
     }
 
     panel.innerHTML =
@@ -1355,7 +1393,6 @@
       '<div class="save-bar" id="saveBar">' +
         '<span class="hint" id="saveHint" style="align-self:center;margin-right:auto;">Faites défiler jusqu\'en bas de la fiche pour valider.</span>' +
         '<div class="save-bar-actions" id="saveBarActions">' +
-          '<button class="btn" id="btnDiag" title="Diagnostic">🔧</button>' +
           '<button class="btn" id="btnPdf">📄 PDF</button>' +
           '<button class="btn" id="btnDraft">Sauvegarde temporaire</button>' +
           '<button class="btn btn-primary" id="btnSave">Valider et envoyer</button>' +
@@ -1491,7 +1528,6 @@
     document.getElementById('btnSave').addEventListener('click', function(){ validateAndSend(m); });
     document.getElementById('btnDraft').addEventListener('click', function(){ saveDraft(m); });
     document.getElementById('btnPdf').addEventListener('click', function(){ exportMissionPdf(m); });
-    document.getElementById('btnDiag').addEventListener('click', showDiagnostic);
   }
 
   function wirePhotoRemoval(m){
@@ -1702,7 +1738,80 @@
   function pdfSetDraw(doc, rgb){ doc.setDrawColor(rgb[0], rgb[1], rgb[2]); }
   function pdfSetText(doc, rgb){ doc.setTextColor(rgb[0], rgb[1], rgb[2]); }
 
-  function buildStyledMissionPDF(m){
+  // ---------- photo format safety net for the PDF ----------
+  // canvas.toDataURL('image/jpeg', ...) is supposed to always return real JPEG
+  // bytes, but some Android WebViews silently return PNG bytes instead while
+  // keeping the "image/jpeg" data: URL prefix. Embedding those bytes as if they
+  // were JPEG produces a PDF that strict readers (e.g. on a PC) refuse to open,
+  // even though lenient ones tolerate the mismatch. We verify the real format
+  // via magic bytes and, if it isn't really JPEG, decode it through a canvas and
+  // re-embed it as plain RGB pixel data instead (100% format-agnostic).
+  function detectRealImageFormat(dataUrl){
+    var comma = dataUrl.indexOf(',');
+    var b64 = comma !== -1 ? dataUrl.slice(comma + 1) : dataUrl;
+    var head = atob(b64.slice(0, 8));
+    if (head.charCodeAt(0) === 0xFF && head.charCodeAt(1) === 0xD8) return 'jpeg';
+    if (head.charCodeAt(0) === 0x89 && head.charCodeAt(1) === 0x50 && head.charCodeAt(2) === 0x4E && head.charCodeAt(3) === 0x47) return 'png';
+    return 'unknown';
+  }
+
+  function preparePhotoForPdf(dataUrl){
+    return new Promise(function(resolve){
+      var realFormat;
+      try { realFormat = detectRealImageFormat(dataUrl); } catch(e){ realFormat = 'unknown'; }
+      if (realFormat === 'jpeg'){
+        resolve(dataUrl);
+        return;
+      }
+      // Not really JPEG: decode via canvas (the browser handles PNG/etc. for us)
+      // and re-embed as raw RGB pixels, sidestepping the broken encoder entirely.
+      var img = new Image();
+      img.onload = function(){
+        try {
+          var canvas = document.createElement('canvas');
+          canvas.width = img.naturalWidth;
+          canvas.height = img.naturalHeight;
+          var ctx = canvas.getContext('2d');
+          ctx.drawImage(img, 0, 0);
+          var imgData = ctx.getImageData(0, 0, canvas.width, canvas.height);
+          var rgba = imgData.data;
+          var rgb = new Uint8Array(canvas.width * canvas.height * 3);
+          for (var p = 0, q = 0; p < rgba.length; p += 4, q += 3){
+            rgb[q] = rgba[p]; rgb[q + 1] = rgba[p + 1]; rgb[q + 2] = rgba[p + 2];
+          }
+          if (typeof CompressionStream === 'function'){
+            try {
+              var cs = new CompressionStream('deflate');
+              var writer = cs.writable.getWriter();
+              writer.write(rgb);
+              writer.close();
+              new Response(cs.readable).arrayBuffer().then(function(buf){
+                resolve({ rgbFlate: new Uint8Array(buf), width: canvas.width, height: canvas.height });
+              }).catch(function(){
+                resolve({ rgbRaw: rgb, width: canvas.width, height: canvas.height });
+              });
+              return;
+            } catch(e){ /* fall through to uncompressed */ }
+          }
+          resolve({ rgbRaw: rgb, width: canvas.width, height: canvas.height });
+        } catch(e){
+          resolve(null);
+        }
+      };
+      img.onerror = function(){ resolve(null); };
+      img.src = dataUrl;
+    });
+  }
+
+  function buildStyledMissionPDFAsync(m){
+    var photos = m.photos || [];
+    return Promise.all(photos.map(function(p){ return preparePhotoForPdf(p.dataUrl); }))
+      .then(function(prepared){
+        return buildStyledMissionPDF(m, prepared);
+      });
+  }
+
+  function buildStyledMissionPDF(m, preparedPhotos){
     var doc = new MiniPDF();
     var pageW = doc.internal.pageSize.getWidth();
     var pageH = doc.internal.pageSize.getHeight();
@@ -1828,7 +1937,7 @@
     fieldRow('Fin de mission', fmtKm(m.kmEnd), margin + colW + 8, colW);
     y += 10;
     if (m.kmStart !== "" && m.kmEnd !== "" && !isNaN(m.kmStart) && !isNaN(m.kmEnd)){
-      var distance = (Number(m.kmEnd) - Number(m.kmStart)).toLocaleString('fr-FR') + ' km';
+      var distance = fmtKmNumber(Number(m.kmEnd) - Number(m.kmStart)) + ' km';
       pdfSetFill(doc, C.panel2);
       doc.roundedRect(margin, y, pageW - margin * 2, 8, 1, 1, 'F');
       pdfSetText(doc, C.muted);
@@ -1925,7 +2034,10 @@
         pdfSetDraw(doc, C.border);
         doc.setLineWidth(0.3);
         doc.roundedRect(x, y, thumbW, thumbH, 1.5, 1.5);
-        try { doc.addImage(p.dataUrl, 'JPEG', x + 0.8, y + 0.8, thumbW - 1.6, thumbH - 1.6); } catch(e){}
+        try {
+          var imgData = (preparedPhotos && preparedPhotos[idx] != null) ? preparedPhotos[idx] : p.dataUrl;
+          doc.addImage(imgData, 'AUTO', x + 0.8, y + 0.8, thumbW - 1.6, thumbH - 1.6);
+        } catch(e){}
         pdfSetText(doc, C.muted);
         doc.setFont('helvetica', 'normal');
         doc.setFontSize(7.5);
@@ -1957,41 +2069,6 @@
   }
   function hasMailComposer(){
     return !!(window.Capacitor && window.Capacitor.isNativePlatform && window.Capacitor.isNativePlatform() && getNativeMailComposer());
-  }
-
-  function showDiagnostic(){
-    var lines = [];
-    lines.push('window.Capacitor existe : ' + !!window.Capacitor);
-    if (window.Capacitor){
-      lines.push('isNativePlatform() : ' + (window.Capacitor.isNativePlatform ? window.Capacitor.isNativePlatform() : 'fonction absente'));
-      lines.push('getPlatform() : ' + (window.Capacitor.getPlatform ? window.Capacitor.getPlatform() : 'fonction absente'));
-      lines.push('typeof registerPlugin : ' + typeof window.Capacitor.registerPlugin);
-      lines.push('Capacitor.Plugins present : ' + !!window.Capacitor.Plugins);
-      if (window.Capacitor.Plugins){
-        lines.push('Plugins listes : ' + Object.keys(window.Capacitor.Plugins).join(', '));
-      }
-    }
-    lines.push('');
-    lines.push('hasMailComposer() : ' + hasMailComposer());
-    lines.push('isCapacitorNative() : ' + isCapacitorNative());
-    lines.push('');
-    lines.push('navigator.share existe : ' + !!navigator.share);
-    lines.push('navigator.canShare existe : ' + !!navigator.canShare);
-
-    if (hasMailComposer()){
-      lines.push('');
-      lines.push('Test canComposeMail en cours...');
-      window.alert(lines.join('\n'));
-      getNativeMailComposer().canComposeMail()
-        .then(function(res){
-          window.alert('Resultat canComposeMail : ' + JSON.stringify(res));
-        })
-        .catch(function(err){
-          window.alert('Erreur canComposeMail : ' + (err && (err.message || JSON.stringify(err))));
-        });
-    } else {
-      window.alert(lines.join('\n'));
-    }
   }
   function blobToBase64(blob){
     return new Promise(function(resolve, reject){
@@ -2058,7 +2135,7 @@
     persistForm(m);
     showToast('Génération du PDF…');
 
-    var doc = buildStyledMissionPDF(m);
+    buildStyledMissionPDFAsync(m).then(function(doc){
     var rawName = m.missionNumber ? m.missionNumber : (m.plate || 'sans_numero');
     var filename = rawName.replace(/[\\/:*?"<>|]+/g, '-') + '.pdf';
     var blob = doc.output('blob');
@@ -2128,6 +2205,7 @@
 
       viaDownloadsCapOrAnchor();
     }
+    });
   }
 
   function buildEmailBodyText(m){
@@ -2136,7 +2214,7 @@
     var stateLabels = { ok: 'Bon état', minor: 'Usure mineure', damage: 'Dégâts constatés' };
     var distance = "";
     if (m.kmStart !== "" && m.kmEnd !== "" && !isNaN(m.kmStart) && !isNaN(m.kmEnd)){
-      distance = (Number(m.kmEnd) - Number(m.kmStart)).toLocaleString('fr-FR') + ' km';
+      distance = fmtKmNumber(Number(m.kmEnd) - Number(m.kmStart)) + ' km';
     }
     var lines = [];
     lines.push('Fiche mission — ' + (m.plate || 'Sans plaque'));
@@ -2164,6 +2242,17 @@
     return lines.join('\n');
   }
 
+  function sniffImageExt(dataUrl){
+    try {
+      var comma = dataUrl.indexOf(',');
+      var b64 = comma !== -1 ? dataUrl.slice(comma + 1) : dataUrl;
+      var head = atob(b64.slice(0, 8));
+      if (head.charCodeAt(0) === 0xFF && head.charCodeAt(1) === 0xD8) return 'jpg';
+      if (head.charCodeAt(0) === 0x89 && head.charCodeAt(1) === 0x50) return 'png';
+    } catch(e){}
+    return 'jpg';
+  }
+
   function sendMissionByEmail(m){
     var email = getDestEmail();
     if (!email){
@@ -2173,7 +2262,8 @@
     }
     var subject = 'Fiche mission ' + (m.missionNumber ? m.missionNumber + ' - ' : '') + (m.plate || '') + ' - ' + fmtDate(m.createdAt);
 
-    var doc = buildStyledMissionPDF(m);
+    showToast('Préparation du PDF…');
+    buildStyledMissionPDFAsync(m).then(function(doc){
     var rawName = m.missionNumber ? m.missionNumber : (m.plate || 'sans_numero');
     var pdfFilename = rawName.replace(/[\\/:*?"<>|]+/g, '-') + '.pdf';
 
@@ -2190,7 +2280,7 @@
         });
       }
       (m.photos || []).forEach(function(p, idx){
-        attachments.push({ data: dataUrlToBase64(p.dataUrl), name: 'photo_' + (idx + 1) + '.jpg' });
+        attachments.push({ data: dataUrlToBase64(p.dataUrl), name: 'photo_' + (idx + 1) + '.' + sniffImageExt(p.dataUrl) });
       });
 
       prep.then(function(){
@@ -2214,6 +2304,7 @@
     }
 
     sendMissionByEmailFallback(m, doc, pdfFilename, subject, email);
+    });
   }
 
   function sendMissionByEmailFallback(m, doc, pdfFilename, subject, email){
@@ -2228,7 +2319,9 @@
 
     (m.photos || []).forEach(function(p, idx){
       try {
-        files.push(new File([dataUrlToBlob(p.dataUrl)], 'photo_' + (idx + 1) + '.jpg', { type: 'image/jpeg' }));
+        var ext = sniffImageExt(p.dataUrl);
+        var mime = ext === 'png' ? 'image/png' : 'image/jpeg';
+        files.push(new File([dataUrlToBlob(p.dataUrl)], 'photo_' + (idx + 1) + '.' + ext, { type: mime }));
       } catch (e) { /* ignore this photo */ }
     });
 
