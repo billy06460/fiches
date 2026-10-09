@@ -6,7 +6,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
 
 jobs:
   build:
@@ -23,21 +23,15 @@ jobs:
           distribution: temurin
           java-version: 21
 
-      - name: Clé de signature stable (pour pouvoir mettre à jour l'appli sans la désinstaller)
+      - name: Clé de signature (mode mise à jour)
         run: |
-          if [ ! -f keystore/debug.keystore ]; then
-            mkdir -p keystore
-            keytool -genkeypair -v -keystore keystore/debug.keystore -storepass android \
-              -alias androiddebugkey -keypass android -keyalg RSA -keysize 2048 -validity 10000 \
-              -dname "CN=Android Debug,O=Android,C=US"
-            git config user.name "github-actions"
-            git config user.email "github-actions@users.noreply.github.com"
-            git add keystore/debug.keystore
-            git commit -m "Ajout de la clé de signature [skip ci]"
-            git push
+          if [ ! -f debug.keystore ]; then
+            echo "::error::Fichier debug.keystore absent à la racine du dépôt. Ajoutez-le pour pouvoir installer les mises à jour par-dessus."
+            exit 1
           fi
           mkdir -p ~/.android
-          cp keystore/debug.keystore ~/.android/debug.keystore
+          cp debug.keystore ~/.android/debug.keystore
+          keytool -list -keystore debug.keystore -storepass android | tail -1
 
       - name: Installer les dépendances
         run: npm install
@@ -50,6 +44,12 @@ jobs:
           npx cap add android
           bash native/patch-android.sh
           npx cap sync android
+
+      - name: Numéro de version (augmente à chaque construction)
+        run: |
+          sed -i "s/versionCode [0-9]*/versionCode ${{ github.run_number }}/" android/app/build.gradle
+          sed -i "s/versionName \"[^\"]*\"/versionName \"1.${{ github.run_number }}\"/" android/app/build.gradle
+          grep -n "versionCode\|versionName" android/app/build.gradle
 
       - name: Compiler l'APK
         working-directory: android
