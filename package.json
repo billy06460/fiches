@@ -1,18 +1,14 @@
 {
-  "name": "carnet-de-bord",
+  "name": "prej-missions",
   "version": "1.0.0",
   "private": true,
-  "description": "Carnet de bord - Fiches vehicules (PREJ Marseille)",
-  "scripts": {},
+  "description": "PREJ Missions : décision de fouille, fiche retour mission et carnet de bord",
   "dependencies": {
-    "@capacitor/core": "^8.0.0",
-    "@capacitor/android": "^8.0.0",
-    "@capacitor/camera": "^8.0.0",
-    "@capacitor/filesystem": "^8.0.0",
-    "@capawesome/capacitor-mail-composer": "^0.2.0"
-  },
-  "devDependencies": {
-    "@capacitor/cli": "^8.0.0",
-    "@capacitor/assets": "^3.0.5"
+    "@capacitor/android": "^7.0.0",
+    "@capacitor/cli": "^7.0.0",
+    "@capacitor/clipboard": "^7.0.0",
+    "@capacitor/core": "^7.0.0",
+    "@capacitor/filesystem": "^7.0.0",
+    "@capacitor/share": "^7.0.0"
   }
 }
