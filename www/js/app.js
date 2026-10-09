@@ -94,31 +94,22 @@
       if (!P.settings.fouilleEmail && !P.settings.retourEmail) setTimeout(function () { P.toast('Pensez à renseigner les destinataires dans la roue dentée.', 4000); }, 600);
       return;
     }
-    var sel = P.getSelected();
-    if (!P.getMission(sel)) {
-      var today = list.find(function (m) { return m.date === P.todayISO() && !m.sentAt; }) || list[0];
-      sel = today.id; P.setSelected(sel);
-    }
+    var sel = '';
     main.innerHTML = '<div id="smsBanner"></div>' +
       '<div class="list-head"><h2>Missions</h2><button class="btn btn-ghost" id="b-new">+ Nouvelle mission</button></div>' +
       list.map(function (m) {
         var badge = m.sentAt ? '<span class="badge sent">Envoyée</span>' : (m.date === P.todayISO() ? '<span class="badge today">Aujourd\'hui</span>' : '');
         return '<div class="mcard' + (m.id === sel ? ' sel' : '') + '">' +
-          '<button class="pick" data-pick="' + m.id + '" aria-label="Choisir comme mission du jour"><span></span></button>' +
           '<button class="body" data-open="' + m.id + '">' +
             '<div class="l1"><span class="om-chip">' + esc(m.numero || 'Sans n°') + '</span>' + badge + '</div>' +
             '<div class="l2">' + esc(P.frDate(m.date)) + ' · Chef : ' + esc(m.chef || '—') + ' · Chauffeur : ' + esc(m.chauffeur || '—') + '</div>' +
             dots(m) +
           '</button></div>';
       }).join('') +
-      '<p class="credit">Appuyez sur une mission pour remplir ses documents. Le rond à gauche choisit la mission à envoyer.</p>';
+      '<p class="credit">Appuyez sur une mission pour remplir ses documents et les envoyer.</p>';
     $('#b-new').onclick = function () { P.go('#/nouvelle'); };
-    $$('[data-pick]').forEach(function (b) { b.onclick = function () { P.setSelected(b.getAttribute('data-pick')); home(); }; });
     $$('[data-open]').forEach(function (b) { b.onclick = function () { P.go('#/m/' + b.getAttribute('data-open')); }; });
-    var cur = P.getMission(sel);
-    bar('<div class="note">Mission du jour : <b>' + esc(cur.numero || 'Sans n°') + '</b> — ' + esc(P.frDate(cur.date)) + '</div>' +
-      '<div class="in"><button class="btn btn-primary btn-lg" id="b-send">Valider et envoyer les PDF</button></div>');
-    $('#b-send').onclick = function () { P.sendMission(P.getMission(P.getSelected())); };
+    bar('');
     refreshBanner();
   }
   function refreshBanner() {
@@ -205,7 +196,7 @@
         if (!v.chef) miss.push("le chef d'escorte");
         if (miss.length) { var e = $('#n-err'); e.textContent = 'Renseignez ' + miss.join(', ') + '.'; e.hidden = false; return; }
         var nm = P.newMission(v);
-        P.missions.push(nm); P.saveMissions(); P.setSelected(nm.id);
+        P.missions.push(nm); P.saveMissions();
         P.go('#/m/' + nm.id, true);
       };
     }
@@ -243,7 +234,7 @@
     };
     $$('[data-doc]').forEach(function (b) { b.onclick = function () { P.go('#/m/' + m.id + '/' + b.getAttribute('data-doc')); }; });
     bar('<div class="in"><button class="btn btn-primary btn-lg" id="h-send">' + (st.allOk ? 'Valider et envoyer les PDF' : 'Envoyer les PDF') + '</button></div>');
-    $('#h-send').onclick = function () { P.setSelected(m.id); P.sendMission(m); };
+    $('#h-send').onclick = function () { P.sendMission(m); };
   }
 
   // ---------------------------------------------------------------- réglages
