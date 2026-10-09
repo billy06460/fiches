@@ -131,7 +131,7 @@
   P.blankFouille = function (m) {
     var s = P.settings;
     return {
-      id: P.uid('f'), destination: (m && m.retour && m.retour.juridiction) || '', etablissement: s.etab || '',
+      id: P.uid('f'), destination: (m && m.retour && m.retour.juridiction) || '', etablissement: P.resp.origin || s.etab || '',
       detenu: '', lors: s.lors || '', motifs: Object.assign({}, s.motifs || {}), autreTxt: '',
       integrale: s.integrale !== false, obs: ''
     };
@@ -232,6 +232,38 @@
     var bin = atob(u.slice(i + 1)), a = new Uint8Array(bin.length);
     for (var k = 0; k < bin.length; k++) a[k] = bin.charCodeAt(k);
     return new Blob([a], { type: mime });
+  };
+
+  // Limite des MMS : le PDF ne doit pas dépasser 600 Ko
+  P.MAX_PDF = 580 * 1024;
+  P.PDF_LEVELS = [{ px: 520, q: 0.8 }, { px: 380, q: 0.65 }, { px: 260, q: 0.5 }, { px: 180, q: 0.4 }];
+  // Image -> JPEG aplati sur fond blanc, côté le plus long limité à maxPx
+  P.toJpeg = function (src, maxPx, q) {
+    return new Promise(function (resolve) {
+      if (!src) return resolve(null);
+      var im = new Image();
+      im.onload = function () {
+        var w = im.naturalWidth || 1, h = im.naturalHeight || 1, k = Math.min(1, maxPx / Math.max(w, h));
+        var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+        var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(im, 0, 0, c.width, c.height);
+        resolve({ src: c.toDataURL('image/jpeg', q), el: im, w: w, h: h });
+      };
+      im.onerror = function () { resolve(null); };
+      im.src = src;
+    });
+  };
+  // Construit le PDF au meilleur niveau qui reste sous la limite
+  P.buildUnderLimit = function (build) {
+    var i = 0, last = null;
+    function next() {
+      var lv = P.PDF_LEVELS[i];
+      return build(lv).then(function (d) {
+        last = d;
+        if (d.blob.size <= P.MAX_PDF || ++i >= P.PDF_LEVELS.length) return d;
+        return next();
+      });
+    }
+    return next().then(function (d) { return d || last; });
   };
 
   P.copyText = function (t) {

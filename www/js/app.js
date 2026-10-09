@@ -99,19 +99,8 @@
       var today = list.find(function (m) { return m.date === P.todayISO() && !m.sentAt; }) || list[0];
       sel = today.id; P.setSelected(sel);
     }
-    var curM = P.getMission(sel), stS = P.status(curM);
-    function quick(key, icon, title) {
-      var x = stS[key], cls = x.state === 'ok' ? ' ok' : x.state === 'part' ? ' part' : '';
-      return '<button class="doc' + cls + '" data-quick="' + key + '"><span class="ico">' + (x.state === 'ok' ? P.ICONS.check : icon) + '</span>' +
-        '<span class="t"><strong>' + title + '</strong><span>' + esc(x.state === 'ok' ? x.label : (x.missing[0] ? 'Manque : ' + x.missing.join(', ') : x.label)) + '</span></span>' +
-        '<span class="chev">' + P.ICONS.chev + '</span></button>';
-    }
     main.innerHTML = '<div id="smsBanner"></div>' +
-      '<div class="list-head"><h2>Mission du jour : ' + esc(curM.numero || 'sans n°') + '</h2><button class="btn btn-ghost" id="b-sig">' + (curM.signature ? 'Signature ✓' : 'Signer') + '</button></div>' +
-      quick('fouille', P.ICONS.search, 'Décision de fouille') +
-      quick('retour', P.ICONS.doc, 'Fiche retour mission') +
-      quick('carnet', P.ICONS.car, 'Carnet de bord') +
-      '<div class="list-head" style="margin-top:18px"><h2>Missions</h2><button class="btn btn-ghost" id="b-new">+ Nouvelle mission</button></div>' +
+      '<div class="list-head"><h2>Missions</h2><button class="btn btn-ghost" id="b-new">+ Nouvelle mission</button></div>' +
       list.map(function (m) {
         var badge = m.sentAt ? '<span class="badge sent">Envoyée</span>' : (m.date === P.todayISO() ? '<span class="badge today">Aujourd\'hui</span>' : '');
         return '<div class="mcard' + (m.id === sel ? ' sel' : '') + '">' +
@@ -122,14 +111,8 @@
             dots(m) +
           '</button></div>';
       }).join('') +
-      '<p class="credit">Le rond à gauche choisit la mission du jour : les 3 boutons du haut ouvrent ses documents. Appuyez sur une mission pour voir ou modifier ses informations.</p>';
+      '<p class="credit">Appuyez sur une mission pour remplir ses documents. Le rond à gauche choisit la mission à envoyer.</p>';
     $('#b-new').onclick = function () { P.go('#/nouvelle'); };
-    $$('[data-quick]').forEach(function (q) { q.onclick = function () { P.go('#/m/' + curM.id + '/' + q.getAttribute('data-quick')); }; });
-    $('#b-sig').onclick = function () {
-      P.askSignature('Signature de ' + (curM.chef || "chef d'escorte"), curM.signature).then(function (url) {
-        if (url === null) return; curM.signature = url; P.touch(curM, true); home();
-      });
-    };
     $$('[data-pick]').forEach(function (b) { b.onclick = function () { P.setSelected(b.getAttribute('data-pick')); home(); }; });
     $$('[data-open]').forEach(function (b) { b.onclick = function () { P.go('#/m/' + b.getAttribute('data-open')); }; });
     var cur = P.getMission(sel);
@@ -271,11 +254,13 @@
     var main = fresh();
     var log = P.getLog().slice(0, 12);
     main.innerHTML = '<div class="panel">' +
-      '<div class="section"><div class="section-title"><span class="section-num">01</span><h3>Destinataires des PDF (@justice.fr)</h3></div>' +
-        '<div class="field"><label for="s-fe">Décision de fouille</label><input type="email" inputmode="email" autocapitalize="off" spellcheck="false" id="s-fe" value="' + esc(s.fouilleEmail) + '" placeholder="prenom.nom@justice.fr"><span class="err" id="e-fe" hidden></span></div>' +
-        '<div class="field"><label for="s-re">Fiche retour mission</label><input type="email" inputmode="email" autocapitalize="off" spellcheck="false" id="s-re" value="' + esc(s.retourEmail) + '" placeholder="prenom.nom@justice.fr"><span class="err" id="e-re" hidden></span></div>' +
-        '<div class="field"><label>Carnet de bord</label><input type="text" readonly value="' + esc([P.resp.email1, P.resp.email2].filter(Boolean).join(', ') || 'Non renseigné') + '">' +
-        '<button class="link" id="s-resp" style="align-self:flex-start">Paramètres responsable (mot de passe)</button></div>' +
+      '<div class="section"><div class="section-title"><span class="section-num">01</span><h3>Destinataires des PDF (protégés)</h3></div>' +
+        '<div class="field"><label>Décision de fouille</label><input type="text" readonly value="' + esc(s.fouilleEmail || 'Non renseigné') + '"></div>' +
+        '<div class="field"><label>Fiche retour mission</label><input type="text" readonly value="' + esc(s.retourEmail || 'Non renseigné') + '"></div>' +
+        '<div class="field"><label>Carnet de bord</label><input type="text" readonly value="' + esc([P.resp.email1, P.resp.email2].filter(Boolean).join(', ') || 'Non renseigné') + '"></div>' +
+        '<div class="field"><label>Unité / établissement par défaut</label><input type="text" readonly value="' + esc(P.resp.origin || 'Non renseigné') + '"></div>' +
+        '<div class="field">' +
+        '<button class="link" id="s-resp" style="align-self:flex-start">🔒 Modifier (mot de passe responsable)</button></div>' +
       '</div>' +
       '<div class="section"><div class="section-title"><span class="section-num">02</span><h3>Ma signature</h3></div>' +
         '<p class="hint" style="margin:0 0 10px;font-size:13px;color:var(--text-muted)">Reprise automatiquement dans les nouvelles missions où vous êtes chef d\'escorte.</p>' +
@@ -286,7 +271,6 @@
           '<button class="btn" id="s-sign">' + (s.signature ? 'Changer' : 'Signer') + '</button></div>' +
       '</div>' +
       '<div class="section"><div class="section-title"><span class="section-num">03</span><h3>Décision de fouille : remplissage automatique</h3></div>' +
-        '<div class="field"><label for="s-etab">Établissement par défaut</label><input type="text" id="s-etab" value="' + esc(s.etab) + '"></div>' +
         '<div class="field"><label for="s-lors">« Lors de » par défaut</label><select id="s-lors">' +
           '<option value="">Aucun</option><option value="extraction"' + (s.lors === 'extraction' ? ' selected' : '') + '>Départ en extraction judiciaire</option>' +
           '<option value="transfert"' + (s.lors === 'transfert' ? ' selected' : '') + '>Départ en transfert</option></select></div>' +
@@ -320,10 +304,8 @@
         e.hidden = true; s[key] = v; P.saveSettings();
       });
     }
-    email('#s-fe', 'fouilleEmail', '#e-fe');
-    email('#s-re', 'retourEmail', '#e-re');
-    ['nom', 'qual', 'etab'].forEach(function (k) {
-      $('#s-' + k).addEventListener('input', function () { s[{ nom: 'nom', qual: 'qualite', etab: 'etab' }[k]] = this.value.trim(); P.saveSettings(); });
+    ['nom', 'qual'].forEach(function (k) {
+      $('#s-' + k).addEventListener('input', function () { s[{ nom: 'nom', qual: 'qualite' }[k]] = this.value.trim(); P.saveSettings(); });
     });
     $('#s-lors').onchange = function () { s.lors = this.value; P.saveSettings(); };
     main.addEventListener('change', function (e) {
@@ -368,10 +350,12 @@
   }
   function respEdit() {
     var r = P.resp, chosen = P.validHex(r.pdfAccent) || '#C9860E';
-    var e = P.modal('<h3>Paramètres responsable</h3><p>Le carnet de bord validé part par MMS vers ces adresses, PDF en pièce jointe. Seules les adresses @justice.fr sont acceptées.</p>' +
-      '<div class="field"><label for="r1">Adresse e-mail</label><input type="email" id="r1" inputmode="email" autocapitalize="off" value="' + esc(r.email1) + '" placeholder="prenom.nom@justice.fr"></div>' +
-      '<div class="field"><label for="r2">2e adresse e-mail (facultatif)</label><input type="email" id="r2" inputmode="email" autocapitalize="off" value="' + esc(r.email2) + '" placeholder="prenom.nom@justice.fr"></div>' +
-      '<div class="field"><label for="ro">Unité</label><input type="text" id="ro" value="' + esc(r.origin) + '"></div>' +
+    var e = P.modal('<h3>Paramètres responsable</h3><p>Chaque document part par MMS vers ces adresses, PDF en pièce jointe. Seules les adresses @justice.fr sont acceptées.</p>' +
+      '<div class="field"><label for="rf">Décision de fouille</label><input type="email" id="rf" inputmode="email" autocapitalize="off" value="' + esc(P.settings.fouilleEmail) + '" placeholder="prenom.nom@justice.fr"></div>' +
+      '<div class="field"><label for="rr">Fiche retour mission</label><input type="email" id="rr" inputmode="email" autocapitalize="off" value="' + esc(P.settings.retourEmail) + '" placeholder="prenom.nom@justice.fr"></div>' +
+      '<div class="field"><label for="r1">Carnet de bord</label><input type="email" id="r1" inputmode="email" autocapitalize="off" value="' + esc(r.email1) + '" placeholder="prenom.nom@justice.fr"></div>' +
+      '<div class="field"><label for="r2">Carnet de bord : 2e adresse (facultatif)</label><input type="email" id="r2" inputmode="email" autocapitalize="off" value="' + esc(r.email2) + '" placeholder="prenom.nom@justice.fr"></div>' +
+      '<div class="field"><label for="ro">Unité</label><input type="text" id="ro" value="' + esc(r.origin) + '"><span class="hint">Sert aussi d\'établissement par défaut dans la décision de fouille.</span></div>' +
       '<div class="field"><label>Couleur du PDF</label><div class="swatches">' + P.ACCENTS.map(function (a) {
         return '<button type="button" class="swatch' + (a.hex === chosen ? ' sel' : '') + '" data-pdf="' + a.hex + '" aria-label="' + a.name + '" style="background:' + a.hex + '"></button>';
       }).join('') + '</div></div>' +
@@ -383,10 +367,12 @@
     e.el.querySelector('[data-a="no"]').onclick = e.close;
     e.el.querySelector('[data-a="ok"]').onclick = function () {
       var e1 = e.el.querySelector('#r1').value.trim().toLowerCase(), e2 = e.el.querySelector('#r2').value.trim().toLowerCase(), err = e.el.querySelector('#r-err');
-      if ((e1 && !P.isAllowedEmail(e1)) || (e2 && !P.isAllowedEmail(e2))) { err.textContent = 'Seules les adresses @justice.fr sont acceptées.'; err.hidden = false; return; }
+      var ef = e.el.querySelector('#rf').value.trim().toLowerCase(), er = e.el.querySelector('#rr').value.trim().toLowerCase();
+      if ((e1 && !P.isAllowedEmail(e1)) || (e2 && !P.isAllowedEmail(e2)) || (ef && !P.isAllowedEmail(ef)) || (er && !P.isAllowedEmail(er))) { err.textContent = 'Seules les adresses @justice.fr sont acceptées.'; err.hidden = false; return; }
       if (!e1 && e2) { e1 = e2; e2 = ''; }
       if (e2 === e1) e2 = '';
       r.email1 = e1; r.email2 = e2; r.origin = e.el.querySelector('#ro').value.trim() || 'PREJ Marseille'; r.pdfAccent = chosen;
+      P.settings.fouilleEmail = ef; P.settings.retourEmail = er; P.saveSettings();
       P.saveResp(); e.close(); P.toast('Paramètres enregistrés.'); settings();
     };
   }

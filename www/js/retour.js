@@ -121,14 +121,19 @@
   // ---------------------------------------------------------------- PDF (A4, en mm)
   P.buildRetourPdf = function (m) {
     if (!window.jspdf) return Promise.reject(new Error("Le module PDF n'est pas chargé."));
-    return Promise.all([imagesPretes, P.loadImage(m.signature)]).then(function (x) {
-      var sig = x[1], r = m.retour;
-      var doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+    return imagesPretes.then(function () { return P.buildUnderLimit(function (lv) {
+    return Promise.all([
+      P.toJpeg(m.signature, lv.px, lv.q),
+      images.logo ? P.toJpeg(images.logo.data, lv.px, lv.q) : null,
+      images.tampon ? P.toJpeg(images.tampon.data, lv.px, lv.q) : null
+    ]).then(function (x) {
+      var sig = x[0], logo = x[1], tampon = x[2], r = m.retour;
+      var doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
       var NOIR = [22, 22, 22], ENCRE = [0, 0, 145], GRIS = [110, 110, 110];
       doc.setLineWidth(0.25); doc.setDrawColor.apply(doc, NOIR);
 
-      if (images.logo) {
-        var lw = 42; doc.addImage(images.logo.data, 'PNG', 11, 24, lw, lw * images.logo.h / images.logo.w);
+      if (logo) {
+        var lw = 42; doc.addImage(logo.src, 'JPEG', 11, 24, lw, lw * logo.h / logo.w, undefined, 'FAST');
       } else {
         doc.setFillColor.apply(doc, NOIR);
         doc.rect(12, 24.5, 5.5, 3, 'F'); doc.rect(19, 24.5, 3.5, 3, 'F');
@@ -137,9 +142,9 @@
         doc.setFont('times', 'bolditalic'); doc.setFontSize(7);
         doc.text('Liberté', 12, 41.5); doc.text('Égalité', 12, 44.5); doc.text('Fraternité', 12, 47.5);
       }
-      if (images.tampon) {
-        var w = 47, h = w * images.tampon.h / images.tampon.w;
-        doc.addImage(images.tampon.data, 'PNG', 158 - w / 2, 28 - h / 2, w, h);
+      if (tampon) {
+        var w = 47, h = w * tampon.h / tampon.w;
+        doc.addImage(tampon.src, 'JPEG', 158 - w / 2, 28 - h / 2, w, h, undefined, 'FAST');
       }
       doc.rect(5, 60, 192, 21);
       doc.setTextColor.apply(doc, NOIR); doc.setFont('helvetica', 'normal');
@@ -225,9 +230,9 @@
       if (sig) {
         var sw = 48, sh = Math.min(16, sw * sig.h / sig.w);
         sw = sh * sig.w / sig.h;
-        doc.addImage(sig.src, 'PNG', 162 - sw / 2, 278, sw, sh);
+        doc.addImage(sig.src, 'JPEG', 162 - sw / 2, 278, sw, sh, undefined, 'FAST');
       }
       return { blob: doc.output('blob'), name: 'Fiche_retour_mission_OM-' + P.safeName(m.numero) + '_' + m.date + '.pdf' };
-    });
+    }); }); });
   };
 })();

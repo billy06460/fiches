@@ -123,7 +123,7 @@
       measure: function (t) { return doc.getTextWidth(t); },
       line: function (x1, y1, x2, y2, dashed, w) { doc.setLineWidth(w || 0.25); if (dashed) doc.setLineDashPattern([0.4, 0.9], 0); doc.line(x1, y1, x2, y2); if (dashed) doc.setLineDashPattern([], 0); },
       rect: function (x, y, w, h) { doc.setLineWidth(0.3); doc.rect(x, y, w, h); },
-      image: function (sig, x, y, w, h) { doc.addImage(sig.src, 'PNG', x, y, w, h); }
+      image: function (sig, x, y, w, h) { doc.addImage(sig.src, 'JPEG', x, y, w, h, undefined, 'FAST'); }
     };
   }
   function canvasBackend(s) {
@@ -244,13 +244,13 @@
   // Un seul PDF : une page par personne détenue
   P.buildFouillePdf = function (m) {
     if (!window.jspdf) return Promise.reject(new Error("Le module PDF n'est pas chargé."));
-    return P.loadImage(m.signature).then(function (sig) {
-      var doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4' });
+    return P.buildUnderLimit(function (lv) { return P.toJpeg(m.signature, lv.px, lv.q).then(function (sig) {
+      var doc = new window.jspdf.jsPDF({ unit: 'mm', format: 'a4', compress: true });
       m.fouilles.forEach(function (f, i) {
         if (i > 0) doc.addPage();
         drawDoc(pdfBackend(doc), data(m, f, sig));
       });
       return { blob: doc.output('blob'), name: 'Decision_fouille_OM-' + P.safeName(m.numero) + '_' + m.date + '.pdf' };
-    });
+    }); });
   };
 })();

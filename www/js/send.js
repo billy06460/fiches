@@ -101,7 +101,7 @@
     if (noDest.length) {
       P.confirm('Destinataires à renseigner',
         '<p>Aucune adresse @justice.fr valide pour : <b>' + noDest.map(function (j) { return P.esc(j.label); }).join(', ') + '</b>.</p>' +
-        '<p>Renseignez-les dans la roue dentée (le carnet de bord est dans « Paramètres responsable »).</p>',
+        '<p>Renseignez-les dans la roue dentée, rubrique « Destinataires » (mot de passe responsable).</p>',
         'Ouvrir les réglages', 'Plus tard').then(function (ok) { if (ok) P.go('#/reglages'); });
       return;
     }
